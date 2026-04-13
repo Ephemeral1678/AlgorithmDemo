@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>最近点对算法演示 - 分治法 vs 蛮力法</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { margin: 0; padding: 0; background: #0f172a; color: #e2e8f0; font-family: 'Inter', 'Segoe UI', sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const POINTS = [
+  { x: 2, y: 3, id: 0 },
+  { x: 3, y: 7, id: 1 },
+  { x: 5, y: 1, id: 2 },
+  { x: 6, y: 5, id: 3 },
+  { x: 8, y: 6, id: 4 },
+  { x: 9, y: 2, id: 5 },
+];
+
+// ===================== 分治法数据 (你的原版代码完全不动) =====================
+const DIVISION_CODE_LINES = [
+  `Result closestPairRec(Point px[], int left, int right) {`,
+  `    // 基准情形：点数 <= 3 时用蛮力法`,
+  `    if (right - left + 1 <= 3) {`,
+  `        return bruteForce(px, left, right);`,
+  `    }`,
+  `    // ---- 分 (Divide) ----`,
+  `    int mid = (left + right) / 2;`,
+  `    double midX = px[mid].x;`,
+  `    // ---- 治 (Conquer) ----`,
+  `    Result leftRes  = closestPairRec(px, left, mid);`,
+  `    Result rightRes = closestPairRec(px, mid+1, right);`,
+  `    // 取左右两边较小的距离`,
+  `    double d = min(leftRes.minDist, rightRes.minDist);`,
+  `    // ---- 合并 (Combine) ----`,
+  `    // 构建带状区域 |x - midX| < d`,
+  `    vector<Point> strip;`,
+  `    for (int i = left; i <= right; i++)`,
+  `        if (fabs(px[i].x - midX) < d) strip.push_back(px[i]);`,
+  `    // 在strip中查找更近的点对`,
+  `    for (int i = 0; i < strip.size(); i++)`,
+  `      for (int j = i+1; j < strip.size() && strip[j].y - strip[i].y < d; j++)`,
+  `        d = min(d, dist(strip[i], strip[j]));`,
+  `    return Result(d, bestP1, bestP2);`,
+  `}`,
+];
+
+const DIVISION_STEPS = [
+  { title: "初始状态：6个点按X坐标排序", description: "输入6个平面上的点，已按x坐标排序。目标：找到距离最近的一对点。", highlightLines: [0], activePoints: [0,1,2,3,4,5], leftRegion: null, rightRegion: null, midLine: null, strip: null, comparePairs: [], bestPair: null, callStack: ["closestPairRec(px, 0, 5)"], phase: "init" },
+  { title: "第一层递归：检查基准情形", description: "n=6 > 3，不满足基准情形，需要继续分治。", highlightLines: [2], activePoints: [0,1,2,3,4,5], leftRegion: null, rightRegion: null, midLine: null, strip: null, comparePairs: [], bestPair: null, callStack: ["closestPairRec(px, 0, 5)"], phase: "check" },
+  { title: "分 (Divide)：从中间划分", description: "mid = (0+5)/2 = 2，中线 midX = px[2].x = 5。分为左半 {P0,P1,P2} 和右半 {P3,P4,P5}。", highlightLines: [5,6,7], activePoints: [0,1,2,3,4,5], leftRegion: [0,1,2], rightRegion: [3,4,5], midLine: 5, strip: null, comparePairs: [], bestPair: null, callStack: ["closestPairRec(px, 0, 5)"], phase: "divide" },
+  { title: "治 (Conquer)：递归处理左半部分", description: "递归调用 closestPairRec(px, 0, 2)，左半只有3个点，用蛮力法。", highlightLines: [1,2,3], activePoints: [0,1,2], leftRegion: [0,1,2], rightRegion: null, midLine: 5, strip: null, comparePairs: [], bestPair: null, callStack: ["closestPairRec(px, 0, 5)", "  closestPairRec(px, 0, 2)"], phase: "left-recurse" },
+  { title: "蛮力法：枚举左半所有点对", description: "P0-P1:4.12, P0-P2:3.61, P1-P2:6.32。左半最近 dL=3.61。", highlightLines: [3], activePoints: [0,1,2], leftRegion: [0,1,2], rightRegion: null, midLine: 5, strip: null, comparePairs: [[0,1],[0,2],[1,2]], bestPair: [0,2], callStack: ["closestPairRec(px, 0, 5)", "  closestPairRec(px, 0, 2) → dL=3.61"], phase: "left-brute" },
+  { title: "治 (Conquer)：递归处理右半部分", description: "递归调用 closestPairRec(px, 3, 5)，右半3个点，用蛮力法。", highlightLines: [1,2,3], activePoints: [3,4,5], leftRegion: null, rightRegion: [3,4,5], midLine: 5, strip: null, comparePairs: [], bestPair: [0,2], callStack: ["closestPairRec(px, 0, 5)", "  closestPairRec(px, 3, 5)"], phase: "right-recurse" },
+  { title: "蛮力法：枚举右半所有点对", description: "P3-P4:2.24, P3-P5:4.24, P4-P5:4.12。右半最近 dR=2.24。", highlightLines: [3], activePoints: [3,4,5], leftRegion: null, rightRegion: [3,4,5], midLine: 5, strip: null, comparePairs: [[3,4],[3,5],[4,5]], bestPair: [3,4], callStack: ["closestPairRec(px, 0, 5)", "  closestPairRec(px, 3, 5) → dR=2.24"], phase: "right-brute" },
+  { title: "回到第一层：取左右最小值", description: "d = min(3.61, 2.24) = 2.24。还需检查跨越中线的点对！", highlightLines: [11,12], activePoints: [0,1,2,3,4,5], leftRegion: [0,1,2], rightRegion: [3,4,5], midLine: 5, strip: null, comparePairs: [], bestPair: [3,4], callStack: ["closestPairRec(px, 0, 5)  d=2.24"], phase: "merge-min" },
+  { title: "合并 (Combine)：构建带状区域", description: "构建 |x-5|<2.24 的带状区域，满足条件的点：P1、P2、P3。", highlightLines: [13,14,15,16,17], activePoints: [0,1,2,3,4,5], leftRegion: [0,1,2], rightRegion: [3,4,5], midLine: 5, strip: [1,2,3], comparePairs: [], bestPair: [3,4], callStack: ["closestPairRec(px, 0, 5)  strip={P1,P2,P3}"], phase: "strip-build" },
+  { title: "在Strip中查找更近的点对", description: "检查strip内点对，均大于2.24，无更新。", highlightLines: [18,19,20,21], activePoints: [0,1,2,3,4,5], leftRegion: [0,1,2], rightRegion: [3,4,5], midLine: 5, strip: [1,2,3], comparePairs: [[2,3],[1,3]], bestPair: [3,4], callStack: ["checking strip..."], phase: "strip-check" },
+  { title: "返回最终结果", description: "最近点对：P3(6,5) ↔ P4(8,6)，距离 = 2.24。", highlightLines: [22], activePoints: [0,1,2,3,4,5], leftRegion: null, rightRegion: null, midLine: null, strip: null, comparePairs: [], bestPair: [3,4], callStack: ["返回 Result(d=2.24, P3, P4)"], phase: "done" },
+];
+
+// ===================== 蛮力法数据 (你原版代码完全不动) =====================
+const BRUTE_CODE_LINES = [
+  `Result bruteForce(Point p[], int n) {`,
+  `    double minDist = INF;`,
+  `    int p1 = -1, p2 = -1;`,
+  `    // 枚举所有 i < j 的点对`,
+  `    for (int i = 0; i < n; i++) {`,
+  `        for (int j = i + 1; j < n; j++) {`,
+  `            double d = dist(p[i], p[j]);`,
+  `            if (d < minDist) {`,
+  `                minDist = d;`,
+  `                p1 = i;`,
+  `                p2 = j;`,
+  `            }`,
+  `        }`,
+  `    }`,
+  `    return Result(minDist, p[p1], p[p2]);`,
+  `}`,
+];
+
+const BRUTE_STEPS = [
+  { title: "蛮力法：初始状态", description: "蛮力法思路：枚举所有点对，计算每一对距离，最后选出最小的。总点数6 → 共15对点比较。", highlightLines: [0,1,2,3], activePoints: [0,1,2,3,4,5], comparePairs: [], bestPair: null, callStack: ["bruteForce(points, 6)"], phase: "init" },
+  { title: "比较 P0 ↔ P1", description: "距离=4.12 → 当前最小：4.12", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[0,1]], bestPair: [0,1], callStack: ["比较 i=0,j=1"], phase: "check" },
+  { title: "比较 P0 ↔ P2", description: "距离=3.61 → 更新最小：3.61", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[0,2]], bestPair: [0,2], callStack: ["比较 i=0,j=2"], phase: "check" },
+  { title: "比较 P0 ↔ P3", description: "距离=4.47 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[0,3]], bestPair: [0,2], callStack: ["比较 i=0,j=3"], phase: "check" },
+  { title: "比较 P0 ↔ P4", description: "距离=6.71 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[0,4]], bestPair: [0,2], callStack: ["比较 i=0,j=4"], phase: "check" },
+  { title: "比较 P0 ↔ P5", description: "距离=7.07 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[0,5]], bestPair: [0,2], callStack: ["比较 i=0,j=5"], phase: "check" },
+  { title: "比较 P1 ↔ P2", description: "距离=6.32 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[1,2]], bestPair: [0,2], callStack: ["比较 i=1,j=2"], phase: "check" },
+  { title: "比较 P1 ↔ P3", description: "距离=3.61 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[1,3]], bestPair: [0,2], callStack: ["比较 i=1,j=3"], phase: "check" },
+  { title: "比较 P1 ↔ P4", description: "距离=5.10 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[1,4]], bestPair: [0,2], callStack: ["比较 i=1,j=4"], phase: "check" },
+  { title: "比较 P1 ↔ P5", description: "距离=7.81 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[1,5]], bestPair: [0,2], callStack: ["比较 i=1,j=5"], phase: "check" },
+  { title: "比较 P2 ↔ P3", description: "距离=5.00 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[2,3]], bestPair: [0,2], callStack: ["比较 i=2,j=3"], phase: "check" },
+  { title: "比较 P2 ↔ P4", description: "距离=5.83 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[2,4]], bestPair: [0,2], callStack: ["比较 i=2,j=4"], phase: "check" },
+  { title: "比较 P2 ↔ P5", description: "距离=4.12 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[2,5]], bestPair: [0,2], callStack: ["比较 i=2,j=5"], phase: "check" },
+  { title: "比较 P3 ↔ P4 🎯", description: "距离=2.24 → **更新最小值！**", highlightLines: [4,5,6,7,8,9,10,11], activePoints: [0,1,2,3,4,5], comparePairs: [[3,4]], bestPair: [3,4], callStack: ["比较 i=3,j=4 → 找到更近点对！"], phase: "check" },
+  { title: "比较 P3 ↔ P5", description: "距离=4.24 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[3,5]], bestPair: [3,4], callStack: ["比较 i=3,j=5"], phase: "check" },
+  { title: "比较 P4 ↔ P5", description: "距离=4.12 → 不更新", highlightLines: [4,5,6], activePoints: [0,1,2,3,4,5], comparePairs: [[4,5]], bestPair: [3,4], callStack: ["比较 i=4,j=5"], phase: "check" },
+  { title: "蛮力法结束 ✅", description: "遍历完成！最近点对为 P3(6,5) ↔ P4(8,6)，距离=2.24", highlightLines: [14], activePoints: [0,1,2,3,4,5], comparePairs: [], bestPair: [3,4], callStack: ["返回结果：minDist=2.24"], phase: "done" },
+];
+
+const COLORS = {
+  bg: "#0f172a", panel: "#1e293b", panelBorder: "#334155",
+  text: "#e2e8f0", textDim: "#94a3b8", accent: "#3b82f6",
+  green: "#22c55e", red: "#ef4444", orange: "#f59e0b", purple: "#a855f7",
+  codeBg: "#0f172a", codeHighlight: "rgba(59,130,246,0.2)", codeHighlightBorder: "#3b82f6",
+};
+
+// ===================== 画布组件 (完全不动) =====================
+function PointCanvas({ step, isBrute = false }) {
+  const s = step;
+  const W = 440, H = 340;
+  const pad = 40;
+  const scaleX = (x) => pad + ((x - 0) / 11) * (W - 2 * pad);
+  const scaleY = (y) => H - pad - ((y - 0) / 9) * (H - 2 * pad);
+
+  return (
+    <svg width={W} height={H} style={{ borderRadius: 8 }}>
+      <rect width={W} height={H} fill="#0c1222" rx={8} />
+      {[0,2,4,6,8,10].map(v => <g key={`gx${v}`}><line x1={scaleX(v)} y1={pad-5} x2={scaleX(v)} y2={H-pad+5} stroke="#1e293b" strokeWidth={1} /><text x={scaleX(v)} y={H-pad+20} fill="#64748b" fontSize={10} textAnchor="middle">{v}</text></g>)}
+      {[0,2,4,6,8].map(v => <g key={`gy${v}`}><line x1={pad-5} y1={scaleY(v)} x2={W-pad+5} y2={scaleY(v)} stroke="#1e293b" strokeWidth={1} /><text x={pad-15} y={scaleY(v)+4} fill="#64748b" fontSize={10} textAnchor="middle">{v}</text></g>)}
+      
+      {!isBrute && s.leftRegion && <rect x={scaleX(0.5)} y={pad-10} width={scaleX(5)-scaleX(0.5)} height={H-2*pad+20} fill="rgba(59,130,246,0.08)" stroke="rgba(59,130,246,0.3)" strokeWidth={1} strokeDasharray="4,4" rx={4} />}
+      {!isBrute && s.rightRegion && <rect x={scaleX(5)} y={pad-10} width={scaleX(10.5)-scaleX(5)} height={H-2*pad+20} fill="rgba(168,85,247,0.08)" stroke="rgba(168,85,247,0.3)" strokeWidth={1} strokeDasharray="4,4" rx={4} />}
+      {!isBrute && s.strip && s.midLine && <rect x={scaleX(s.midLine - 2.24)} y={pad-10} width={scaleX(s.midLine + 2.24) - scaleX(s.midLine - 2.24)} height={H-2*pad+20} fill="rgba(245,158,11,0.15)" stroke="rgba(245,158,11,0.5)" strokeWidth={1.5} strokeDasharray="6,3" rx={4} />}
+      {!isBrute && s.midLine !== null && <line x1={scaleX(s.midLine)} y1={pad-10} x2={scaleX(s.midLine)} y2={H-pad+10} stroke={COLORS.green} strokeWidth={2} strokeDasharray="8,4" opacity={0.7} />}
+
+      {s.comparePairs.map(([a, b], i) => {
+        const isBest = s.bestPair && a === s.bestPair[0] && b === s.bestPair[1];
+        return <line key={`cp${i}`} x1={scaleX(POINTS[a].x)} y1={scaleY(POINTS[a].y)} x2={scaleX(POINTS[b].x)} y2={scaleY(POINTS[b].y)} stroke={isBest ? COLORS.green : "#475569"} strokeWidth={isBest ? 2.5 : 1.5} strokeDasharray={isBest ? "0" : "4,4"} opacity={isBest ? 1 : 0.6} />;
+      })}
+      {s.bestPair && s.comparePairs.length === 0 && <line x1={scaleX(POINTS[s.bestPair[0]].x)} y1={scaleY(POINTS[s.bestPair[0]].y)} x2={scaleX(POINTS[s.bestPair[1]].x)} y2={scaleY(POINTS[s.bestPair[1]].y)} stroke={COLORS.green} strokeWidth={2.5} />}
+
+      {POINTS.map((p, i) => {
+        const active = s.activePoints.includes(i);
+        const inStrip = !isBrute && s.strip && s.strip.includes(i);
+        const isBest = s.bestPair && (i === s.bestPair[0] || i === s.bestPair[1]);
+        const inLeft = !isBrute && s.leftRegion && s.leftRegion.includes(i);
+        const inRight = !isBrute && s.rightRegion && s.rightRegion.includes(i);
+        let fill = "#475569"; let r = 5; let strokeC = "none"; let strokeW = 0;
+        if (active) fill = "#94a3b8";
+        if (inLeft) fill = COLORS.accent;
+        if (inRight) fill = COLORS.purple;
+        if (inStrip) { fill = COLORS.orange; r = 6; }
+        if (isBest) { fill = COLORS.green; r = 8; strokeC = "#86efac"; strokeW = 2; }
+        return (
+          <g key={`p${i}`}>
+            {isBest && <circle cx={scaleX(p.x)} cy={scaleY(p.y)} r={14} fill="none" stroke={COLORS.green} strokeWidth={1} opacity={0.4} />}
+            <circle cx={scaleX(p.x)} cy={scaleY(p.y)} r={r} fill={fill} stroke={strokeC} strokeWidth={strokeW} opacity={active ? 1 : 0.3} />
+            <text x={scaleX(p.x)} y={scaleY(p.y) - 12} fill={active ? "#e2e8f0" : "#475569"} fontSize={11} fontWeight="600" textAnchor="middle">P{i}({p.x},{p.y})</text>
+          </g>
+        );
+      })}
+
+      {!isBrute && s.leftRegion && <text x={scaleX(2.5)} y={pad} fill={COLORS.accent} fontSize={11} fontWeight="bold" textAnchor="middle">左半部分</text>}
+      {!isBrute && s.rightRegion && <text x={scaleX(7.5)} y={pad} fill={COLORS.purple} fontSize={11} fontWeight="bold" textAnchor="middle">右半部分</text>}
+      {!isBrute && s.midLine !== null && <text x={scaleX(s.midLine)+5} y={pad+12} fill={COLORS.green} fontSize={10} fontWeight="bold">midX={s.midLine}</text>}
+      {!isBrute && s.strip && <text x={scaleX(s.midLine)} y={H-pad+35} fill={COLORS.orange} fontSize={10} fontWeight="bold" textAnchor="middle">Strip区域</text>}
+    </svg>
+  );
+}
+
+// ===================== 代码面板 (完全不动) =====================
+function CodePanel({ code, step }) {
+  const s = step;
+  return (
+    <div style={{ background: COLORS.codeBg, borderRadius: 8, border: `1px solid ${COLORS.panelBorder}`, fontFamily: "Consolas", fontSize: 12, lineHeight: "20px", overflow: "auto", maxHeight: 340 }}>
+      <div style={{ padding: "8px 12px", borderBottom: `1px solid ${COLORS.panelBorder}`, color: COLORS.textDim, fontSize: 11 }}>
+        {code === DIVISION_CODE_LINES ? "divide_conquer.cpp" : "brute_force.cpp"}
+      </div>
+      <div style={{ padding: "8px 0" }}>
+        {code.map((line, i) => {
+          const isHL = s.highlightLines.includes(i);
+          return (
+            <div key={i} style={{ padding: "1px 12px 1px 8px", display: "flex", background: isHL ? COLORS.codeHighlight : "transparent", borderLeft: isHL ? `3px solid ${COLORS.codeHighlightBorder}` : "3px solid transparent" }}>
+              <span style={{ color: "#475569", width: 28, textAlign: "right", marginRight: 12, userSelect: "none" }}>{i + 1}</span>
+              <span style={{ color: isHL ? "#f1f5f9" : "#64748b", whiteSpace: "pre" }}>{line}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ===================== 主程序 (整合切换功能) =====================
+function MainDemo() {
+  const [mode, setMode] = useState("divide"); // divide / brute
+  const [step, setStep] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const code = mode === "divide" ? DIVISION_CODE_LINES : BRUTE_CODE_LINES;
+  const steps = mode === "divide" ? DIVISION_STEPS : BRUTE_STEPS;
+  const s = steps[step];
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    if (step >= steps.length - 1) { setIsPlaying(false); return; }
+    const timer = setTimeout(() => setStep(prev => prev + 1), mode === "divide" ? 2500 : 1400);
+    return () => clearTimeout(timer);
+  }, [isPlaying, step, mode]);
+
+  const switchMode = (m) => {
+    setMode(m);
+    setStep(0);
+    setIsPlaying(false);
+  };
+
+  const phaseColors = {
+    init: COLORS.accent, check: COLORS.orange, divide: COLORS.green,
+    "left-recurse": COLORS.accent, "left-brute": COLORS.accent,
+    "right-recurse": COLORS.purple, "right-brute": COLORS.purple,
+    "merge-min": COLORS.orange, "strip-build": COLORS.orange,
+    "strip-check": COLORS.orange, done: COLORS.green
+  };
+
+  return (
+    <div style={{ background: COLORS.bg, minHeight: "100vh", color: COLORS.text, padding: 20 }}>
+      <div style={{ textAlign: "center", marginBottom: 12 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0 }}>最近点对算法可视化演示</h1>
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "center", gap: 12 }}>
+          <button onClick={() => switchMode("divide")} style={{ ...switchBtnStyle, background: mode === "divide" ? "#3b82f6" : "#1e293b", color: "#fff" }}>
+            分治法 O(nlogn)
+          </button>
+          <button onClick={() => switchMode("brute")} style={{ ...switchBtnStyle, background: mode === "brute" ? "#ef4444" : "#1e293b", color: "#fff" }}>
+            蛮力法 O(n²)
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <span style={{ color: COLORS.textDim, fontSize: 12 }}>步骤 {step + 1}/{steps.length}</span>
+        <div style={{ flex: 1, height: 4, background: "#1e293b", borderRadius: 2 }}>
+          <div style={{ width: `${((step + 1) / steps.length) * 100}%`, height: "100%", background: `linear-gradient(90deg, ${COLORS.accent}, #60a5fa)`, borderRadius: 2 }} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 340 }}><CodePanel code={code} step={s} /></div>
+        <div style={{ flex: 1, minWidth: 340 }}><PointCanvas step={s} isBrute={mode === "brute"} /></div>
+      </div>
+
+      <div style={{ background: COLORS.panel, border: `1px solid ${COLORS.panelBorder}`, borderRadius: 8, padding: 16, marginTop: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <span style={{ padding: "2px 10px", borderRadius: 12, fontSize: 11, fontWeight: 700, background: `${phaseColors[s.phase]}22`, color: phaseColors[s.phase], border: `1px solid ${phaseColors[s.phase]}44` }}>
+            {s.phase === "init" ? "初始化" : s.phase === "check" ? "逐一比较" : s.phase === "divide" ? "分 Divide" : s.phase.includes("recurse") ? "治 递归" : s.phase.includes("brute") ? "治 蛮力" : s.phase.includes("strip") ? "合并 Strip" : s.phase === "done" ? "完成" : "执行中"}
+          </span>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{s.title}</h3>
+        </div>
+        <p style={{ margin: 0, color: COLORS.textDim, fontSize: 14, lineHeight: "22px" }}>{s.description}</p>
+        <div style={{ marginTop: 10 }}>
+          <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>执行栈：</span>
+          <div style={{ background: "#0f172a", borderRadius: 4, padding: "6px 10px", marginTop: 4, fontFamily: "monospace", fontSize: 12, color: "#93c5fd" }}>
+            {s.callStack.map((c, i) => <div key={i}>{c}</div>)}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 12, marginTop: 16 }}>
+        <button onClick={() => { setStep(0); setIsPlaying(false); }} style={btnStyle} disabled={step === 0}>⏮ 重置</button>
+        <button onClick={() => { setStep(Math.max(0, step - 1)); setIsPlaying(false); }} style={btnStyle} disabled={step === 0}>◀ 上一步</button>
+        <button onClick={() => setIsPlaying(!isPlaying)} style={{ ...btnStyle, background: isPlaying ? "rgba(239,68,68,0.2)" : "rgba(59,130,246,0.2)", borderColor: isPlaying ? "#ef4444" : "#3b82f6", color: isPlaying ? "#fca5a5" : "#93c5fd", minWidth: 100 }}>{isPlaying ? "⏸ 暂停" : "▶ 自动播放"}</button>
+        <button onClick={() => { setStep(Math.min(steps.length - 1, step + 1)); setIsPlaying(false); }} style={btnStyle} disabled={step === steps.length - 1}>下一步 ▶</button>
+        <button onClick={() => { setStep(steps.length - 1); setIsPlaying(false); }} style={btnStyle} disabled={step === steps.length - 1}>结果 ⏭</button>
+      </div>
+    </div>
+  );
+}
+
+const btnStyle = { padding: "8px 16px", borderRadius: 6, border: "1px solid #334155", background: "rgba(30,41,59,0.8)", color: "#cbd5e1", fontSize: 13, cursor: "pointer" };
+const switchBtnStyle = { padding: "10px 20px", borderRadius: 6, border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer" };
+
+ReactDOM.render(<MainDemo />, document.getElementById('root'));
+</script>
+</body>
+</html>
